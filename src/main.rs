@@ -11,7 +11,8 @@ use ratatui::{
     DefaultTerminal,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     layout::{Alignment, Constraint, Direction, Layout},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    style::{Color, Style},
+    widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -217,6 +218,7 @@ impl<'a> FlipApp<'a> {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
+                Constraint::Length(3),  // progress
                 Constraint::Length(10), // flashcard vertical
                 Constraint::Min(0),
             ])
@@ -229,7 +231,7 @@ impl<'a> FlipApp<'a> {
                 Constraint::Length(40), // flashcard horizontal
                 Constraint::Min(0),
             ])
-            .split(vertical[1]);
+            .split(vertical[2]);
 
         let card = Block::default()
             .title("Flashcard")
@@ -251,6 +253,27 @@ impl<'a> FlipApp<'a> {
         .block(card)
         .wrap(Wrap { trim: true });
 
+        let progress_horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(40), // flashcard horizontal
+                Constraint::Min(0),
+            ])
+            .split(vertical[1]);
+
+        let progress = self.deck_state.current_index as f64 / self.deck_state.cards.len() as f64;
+        let gauge = Gauge::default()
+            .block(Block::default().title("Progress").borders(Borders::ALL))
+            .gauge_style(Style::default().fg(Color::Green))
+            .ratio(progress)
+            .label(format!(
+                "{}/{}",
+                self.deck_state.current_index + 1,
+                self.deck_state.cards.len()
+            ));
+
         frame.render_widget(paragraph, horizontal[1]);
+        frame.render_widget(gauge, progress_horizontal[1]);
     }
 }
