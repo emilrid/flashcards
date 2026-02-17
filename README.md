@@ -6,6 +6,7 @@ State of a flashcard deck is stored as `.toml` file which is automatically gener
 
 Usage: flashcards --file <FILE> <COMMAND>
 
+```
 Commands:
   add     
   remove  
@@ -16,3 +17,4 @@ Commands:
 Options:
   -f, --file <FILE>  
   -h, --help         Print help
+```
