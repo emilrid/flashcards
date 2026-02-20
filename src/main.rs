@@ -154,7 +154,11 @@ fn main() -> io::Result<()> {
         }
 
         Action::Flip { order } => {
-            ratatui::run(|terminal| FlipApp::new(&mut state, order).run(terminal))?;
+            if state.cards.len() <= 0 {
+                println!("Deck is empty");
+            } else {
+                ratatui::run(|terminal| FlipApp::new(&mut state, order).run(terminal))?;
+            }
         }
     }
     save_state(&args.file, &state);
@@ -262,7 +266,8 @@ impl<'a> FlipApp<'a> {
             ])
             .split(vertical[1]);
 
-        let progress = self.deck_state.current_index as f64 / self.deck_state.cards.len() as f64;
+        let progress =
+            (self.deck_state.current_index + 1) as f64 / self.deck_state.cards.len() as f64;
         let gauge = Gauge::default()
             .block(Block::default().title("Progress").borders(Borders::ALL))
             .gauge_style(Style::default().fg(Color::Green))
