@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rand::{rng, seq::SliceRandom};
+use rand::seq::SliceRandom;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use ratatui::{
     DefaultTerminal,
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{self, KeyCode},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
@@ -48,10 +48,6 @@ impl DeckState {
                 "Index out of bounds",
             ))
         }
-    }
-
-    fn get_card(&self, index: usize) -> &Flashcard {
-        &self.cards[index]
     }
 }
 
