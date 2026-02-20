@@ -25,16 +25,12 @@ struct Flashcard {
 
 #[derive(Serialize, Deserialize)]
 struct DeckState {
-    current_index: usize,
     cards: Vec<Flashcard>,
 }
 
 impl DeckState {
     fn new() -> Self {
-        Self {
-            current_index: 0,
-            cards: Vec::new(),
-        }
+        Self { cards: Vec::new() }
     }
 
     fn add_card(&mut self, flashcard: Flashcard) {
@@ -52,20 +48,8 @@ impl DeckState {
         }
     }
 
-    fn current_card(&self) -> &Flashcard {
-        &self.cards[self.current_index]
-    }
-
-    fn increment_index(&mut self) {
-        if self.current_index < self.cards.len() - 1 {
-            self.current_index += 1;
-        }
-    }
-
-    fn decrement_index(&mut self) {
-        if self.current_index > 0 {
-            self.current_index -= 1;
-        }
+    fn get_card(&self, index: usize) -> &Flashcard {
+        &self.cards[index]
     }
 }
 
@@ -181,23 +165,27 @@ impl Side {
     }
 }
 
-struct FlipApp<'a> {
+struct FlipApp {
     should_exit: bool,
-    deck_state: &'a mut DeckState,
+    deck: Vec<Flashcard>,
     order: Order,
     show_side: Side,
     index: usize,
 }
 
-impl<'a> FlipApp<'a> {
-    fn new(deck_state: &'a mut DeckState, order: Order) -> Self {
+impl FlipApp {
+    fn new(deck_state: &DeckState, order: Order) -> Self {
         Self {
             should_exit: false,
-            deck_state,
+            deck: deck_state.cards.clone(),
+            index: 0,
             order,
             show_side: Side::Front,
-            index: 0,
         }
+    }
+    
+    fn flip_card(&mut self) {
+        self.show_side = self.show_side.toggle();
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -207,9 +195,19 @@ impl<'a> FlipApp<'a> {
             if let Some(key) = event::read()?.as_key_press_event() {
                 match key.code {
                     KeyCode::Char('q') => self.should_exit = true,
-                    KeyCode::Char('f') => self.show_side = self.show_side.toggle(),
-                    KeyCode::Char('n') => self.deck_state.increment_index(),
-                    KeyCode::Char('b') => self.deck_state.decrement_index(),
+                    KeyCode::Char('f') => self.flip_card(),
+                    KeyCode::Char('n') => {
+                        if self.index < self.deck.len() - 1 {
+                            self.index += 1;
+                            self.flip_card();
+                        }
+                    }
+                    KeyCode::Char('b') => {
+                        if self.index > 0 {
+                            self.index -= 1;
+                            self.flip_card();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -244,7 +242,7 @@ impl<'a> FlipApp<'a> {
 
         let paragraph = Paragraph::new(
             {
-                let card = self.deck_state.current_card();
+                let card = &self.deck[self.index];
 
                 match self.show_side {
                     Side::Front => &card.front,
@@ -266,16 +264,15 @@ impl<'a> FlipApp<'a> {
             ])
             .split(vertical[1]);
 
-        let progress =
-            (self.deck_state.current_index + 1) as f64 / self.deck_state.cards.len() as f64;
+        let progress = (self.index + 1) as f64 / self.deck.len() as f64;
         let gauge = Gauge::default()
             .block(Block::default().title("Progress").borders(Borders::ALL))
             .gauge_style(Style::default().fg(Color::Green))
             .ratio(progress)
             .label(format!(
                 "{}/{}",
-                self.deck_state.current_index + 1,
-                self.deck_state.cards.len()
+                self.index + 1,
+                self.deck.len()
             ));
 
         frame.render_widget(paragraph, horizontal[1]);
