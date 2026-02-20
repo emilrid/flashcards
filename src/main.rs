@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use rand::{rng, seq::SliceRandom};
+
 use clap::{Parser, Subcommand, ValueEnum};
 
 use serde::{Deserialize, Serialize};
@@ -91,6 +93,7 @@ enum Action {
 #[derive(ValueEnum, Debug, Clone)]
 enum Order {
     Sequential,
+    Random,
 }
 
 fn save_state(path: &Path, state: &DeckState) {
@@ -168,22 +171,27 @@ impl Side {
 struct FlipApp {
     should_exit: bool,
     deck: Vec<Flashcard>,
-    order: Order,
     show_side: Side,
     index: usize,
 }
 
 impl FlipApp {
     fn new(deck_state: &DeckState, order: Order) -> Self {
-        Self {
+        let mut app = Self {
             should_exit: false,
             deck: deck_state.cards.clone(),
             index: 0,
-            order,
             show_side: Side::Front,
+        };
+        match order {
+            Order::Sequential => {}
+            Order::Random => {
+                app.deck.shuffle(&mut rand::rng());
+            }
         }
+        app
     }
-    
+
     fn flip_card(&mut self) {
         self.show_side = self.show_side.toggle();
     }
@@ -199,13 +207,13 @@ impl FlipApp {
                     KeyCode::Char('n') => {
                         if self.index < self.deck.len() - 1 {
                             self.index += 1;
-                            self.flip_card();
+                            self.show_side = Side::Front;
                         }
                     }
                     KeyCode::Char('b') => {
                         if self.index > 0 {
                             self.index -= 1;
-                            self.flip_card();
+                            self.show_side = Side::Front;
                         }
                     }
                     _ => {}
@@ -269,11 +277,7 @@ impl FlipApp {
             .block(Block::default().title("Progress").borders(Borders::ALL))
             .gauge_style(Style::default().fg(Color::Green))
             .ratio(progress)
-            .label(format!(
-                "{}/{}",
-                self.index + 1,
-                self.deck.len()
-            ));
+            .label(format!("{}/{}", self.index + 1, self.deck.len()));
 
         frame.render_widget(paragraph, horizontal[1]);
         frame.render_widget(gauge, progress_horizontal[1]);
