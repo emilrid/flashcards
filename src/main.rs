@@ -3,7 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rand::seq::SliceRandom;
+use rand::{
+    distr::{Distribution, weighted::WeightedIndex},
+    random_range,
+    seq::IndexedRandom,
+};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -14,6 +18,7 @@ use ratatui::{
     crossterm::event::{self, KeyCode},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
 
@@ -90,6 +95,7 @@ enum Action {
 enum Order {
     Sequential,
     Random,
+    Weighted,
 }
 
 fn save_state(path: &Path, state: &DeckState) {
@@ -166,30 +172,69 @@ impl Side {
 
 struct FlipApp {
     should_exit: bool,
+    order: Order,
     deck: Vec<Flashcard>,
+    card_index: usize,
     show_side: Side,
-    index: usize,
 }
 
 impl FlipApp {
     fn new(deck_state: &DeckState, order: Order) -> Self {
-        let mut app = Self {
+        Self {
             should_exit: false,
+            order,
             deck: deck_state.cards.clone(),
-            index: 0,
+            card_index: 0,
             show_side: Side::Front,
-        };
-        match order {
-            Order::Sequential => {}
-            Order::Random => {
-                app.deck.shuffle(&mut rand::rng());
-            }
         }
-        app
+    }
+
+    fn next_card(&mut self) {
+        match self.order {
+            Order::Sequential => {
+                if self.card_index < self.deck.len() - 1 {
+                    self.card_index += 1;
+                }
+            }
+            Order::Random => {
+                self.card_index = rand::random_range(0..self.deck.len());
+            }
+            Order::Weighted => self.card_index = self.random_weighted_index(),
+        };
+        self.show_side = Side::Front;
+    }
+
+    fn prev_card(&mut self) {
+        match self.order {
+            Order::Sequential => {
+                if self.card_index > 0 {
+                    self.card_index -= 1;
+                }
+            }
+            _ => {}
+        }
+        self.show_side = Side::Front;
     }
 
     fn flip_card(&mut self) {
         self.show_side = self.show_side.toggle();
+    }
+
+    fn random_weighted_index(&self) -> usize {
+        fn weight(card: &Flashcard) -> f64 {
+            let total = card.correct + card.incorrect;
+            if total == 0 {
+                return 3.0;
+            }
+
+            (card.incorrect + 1) as f64 / (total as f64)
+        }
+
+        let weights: Vec<f64> = self.deck.iter().map(weight).collect();
+        let dist = WeightedIndex::new(&weights).unwrap();
+        let mut rng = rand::rng();
+
+        dist.sample(&mut rng)
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -200,18 +245,15 @@ impl FlipApp {
                 match key.code {
                     KeyCode::Char('q') => self.should_exit = true,
                     KeyCode::Char('f') => self.flip_card(),
+                    KeyCode::Char('y') => {
+                        self.deck[self.card_index].correct += 1;
+                        self.next_card();
+                    },
                     KeyCode::Char('n') => {
-                        if self.index < self.deck.len() - 1 {
-                            self.index += 1;
-                            self.show_side = Side::Front;
-                        }
-                    }
-                    KeyCode::Char('b') => {
-                        if self.index > 0 {
-                            self.index -= 1;
-                            self.show_side = Side::Front;
-                        }
-                    }
+                        self.deck[self.card_index].incorrect += 1;
+                        self.next_card();
+                    },
+                    KeyCode::Char('b') => self.prev_card(),
                     _ => {}
                 }
             }
@@ -241,12 +283,12 @@ impl FlipApp {
 
         let card = Block::default()
             .title("Flashcard")
-            .title_bottom("q[uit], f[lip], n[ext], b[ack]")
+            .title_bottom("q[uit], f[lip], y[es], n[o], b[ack]")
             .borders(Borders::ALL);
 
         let paragraph = Paragraph::new(
             {
-                let card = &self.deck[self.index];
+                let card = &self.deck[self.card_index];
 
                 match self.show_side {
                     Side::Front => &card.front,
@@ -268,14 +310,56 @@ impl FlipApp {
             ])
             .split(vertical[1]);
 
-        let progress = (self.index + 1) as f64 / self.deck.len() as f64;
-        let gauge = Gauge::default()
-            .block(Block::default().title("Progress").borders(Borders::ALL))
-            .gauge_style(Style::default().fg(Color::Green))
-            .ratio(progress)
-            .label(format!("{}/{}", self.index + 1, self.deck.len()));
+        match self.order {
+            Order::Sequential | Order::Random => {
+                let progress = (self.card_index + 1) as f64 / self.deck.len() as f64;
+                let gauge = Gauge::default()
+                    .block(Block::default().title("Progress").borders(Borders::ALL))
+                    .gauge_style(Style::default().fg(Color::Green))
+                    .ratio(progress)
+                    .label(format!("{}/{}", self.card_index + 1, self.deck.len()));
+                frame.render_widget(gauge, progress_horizontal[1]);
+            }
+            Order::Weighted => {
+                fn mastery_color(ratio: f64) -> Color {
+                    match ratio {
+                        r if r < 0.3 => Color::Red,
+                        r if r < 0.6 => Color::Yellow,
+                        r if r < 0.8 => Color::LightGreen,
+                        _ => Color::Green,
+                    }
+                }
+                let spans: Vec<Span> = self
+                    .deck
+                    .iter()
+                    .enumerate()
+                    .map(|(index, card)| {
+                        let total = card.correct + card.incorrect;
+
+                        let ratio = if total == 0 {
+                            0.0
+                        } else {
+                            card.correct as f64 / total as f64
+                        };
+
+                        let color = mastery_color(ratio);
+
+                        let style = if index == self.card_index {
+                            Style::default().fg(Color::Gray)
+                        } else {
+                            Style::default().fg(color)
+                        };
+
+                        Span::styled("█ ", style)
+                    })
+                    .collect();
+                let knowledge_bar = Paragraph::new(Line::from(spans))
+                    .block(Block::default().title("Knowledge").borders(Borders::ALL))
+                    .alignment(Alignment::Center);
+                frame.render_widget(knowledge_bar, progress_horizontal[1]);
+            }
+        }
 
         frame.render_widget(paragraph, horizontal[1]);
-        frame.render_widget(gauge, progress_horizontal[1]);
     }
 }
